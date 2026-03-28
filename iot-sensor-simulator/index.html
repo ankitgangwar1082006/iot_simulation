@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SmartCampus IoT Simulator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    :root {
+      --bg:        #0a0e1a;
+      --surface:   #111827;
+      --surface2:  #1a2235;
+      --border:    #1e2d45;
+      --accent:    #00e5ff;
+      --accent2:   #7c3aed;
+      --green:     #00ff9d;
+      --red:       #ff4c6a;
+      --yellow:    #ffd700;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --font-head: 'Syne', sans-serif;
+      --font-mono: 'Space Mono', monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-mono);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 80px;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0,229,255,0.07) 0%, transparent 60%),
+        linear-gradient(180deg, #0a0e1a 0%, #080c16 100%);
+    }
+
+    /* ── NOTIFICATION STACK ── */
+    #notif-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-width: 340px;
+    }
+
+    .notif {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 18px;
+      border-radius: 10px;
+      border-left: 4px solid;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      animation: slideIn 0.35s cubic-bezier(0.22,1,0.36,1) forwards;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .notif.success {
+      background: rgba(0,255,157,0.1);
+      border-color: var(--green);
+      color: var(--green);
+    }
+    .notif.error {
+      background: rgba(255,76,106,0.1);
+      border-color: var(--red);
+      color: var(--red);
+    }
+    .notif.info {
+      background: rgba(0,229,255,0.08);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .notif-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+    .notif-body { flex: 1; }
+    .notif-title { font-family: var(--font-head); font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+    .notif-msg   { font-size: 11px; opacity: 0.85; }
+    .notif-close {
+      background: none; border: none; color: inherit; cursor: pointer;
+      opacity: 0.6; font-size: 16px; padding: 0; flex-shrink: 0;
+      transition: opacity 0.2s;
+    }
+    .notif-close:hover { opacity: 1; }
+    .notif.fadeOut { animation: fadeOut 0.3s forwards; }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(60px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes fadeOut {
+      from { opacity: 1; transform: translateX(0); }
+      to   { opacity: 0; transform: translateX(60px); }
+    }
+
+    /* ── HEADER ── */
+    .header {
+      text-align: center;
+      margin-bottom: 48px;
+      animation: fadeUp 0.7s ease both;
+    }
+    .header-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: rgba(0,229,255,0.08);
+      border: 1px solid rgba(0,229,255,0.2);
+      border-radius: 20px;
+      padding: 5px 14px;
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .badge-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: 0.5; transform: scale(1.3); }
+    }
+    h1 {
+      font-family: var(--font-head);
+      font-size: clamp(28px, 5vw, 46px);
+      font-weight: 800;
+      line-height: 1.1;
+      background: linear-gradient(135deg, #fff 30%, var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+    .header-sub {
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: 0.03em;
+    }
+
+    /* ── MAIN LAYOUT ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+      width: 100%;
+      max-width: 960px;
+      animation: fadeUp 0.8s 0.1s ease both;
+    }
+
+    @media (max-width: 720px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { order: -1; }
+    }
+
+    /* ── CARD ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+    }
+    .card-title {
+      font-family: var(--font-head);
+      font-weight: 600;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 22px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title::before {
+      content: '';
+      width: 3px; height: 14px;
+      background: var(--accent);
+      border-radius: 2px;
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    /* ── DEVICE SELECTOR ── */
+    .device-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 26px;
+    }
+    .device-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 16px 10px;
+      background: var(--surface2);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+      color: var(--muted);
+    }
+    .device-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(0,229,255,0.06);
+    }
+    .device-btn.active {
+      border-color: var(--accent);
+      background: rgba(0,229,255,0.1);
+      color: var(--accent);
+      box-shadow: 0 0 20px rgba(0,229,255,0.15);
+    }
+    .device-icon { font-size: 26px; }
+    .device-label { font-size: 10px; font-family: var(--font-head); font-weight: 600; text-align: center; text-transform: uppercase; letter-spacing: 0.06em; line-height: 1.3; }
+
+    /* ── FORM ── */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 7px; }
+    .form-group.full { grid-column: 1 / -1; }
+
+    label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-family: var(--font-head);
+      font-weight: 600;
+    }
+
+    input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 14px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+    }
+    input::placeholder { color: #3a4a60; }
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0,229,255,0.12);
+    }
+    input.error-field { border-color: var(--red); }
+
+    /* ── SENSOR VALUE ── */
+    .sensor-block {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .sensor-icon-wrap {
+      width: 52px; height: 52px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+    .sensor-icon-wrap.water  { background: rgba(0,229,255,0.12); }
+    .sensor-icon-wrap.energy { background: rgba(255,215,0,0.12); }
+    .sensor-icon-wrap.people { background: rgba(124,58,237,0.15); }
+
+    .sensor-inner { flex: 1; }
+    .sensor-inner label { display: block; margin-bottom: 7px; }
+    .sensor-inner input { width: 100%; }
+
+    /* ── SUBMIT ── */
+    .submit-btn {
+      width: 100%;
+      padding: 15px;
+      background: linear-gradient(135deg, var(--accent2), #4f46e5);
+      border: none;
+      border-radius: 10px;
+      color: #fff;
+      font-family: var(--font-head);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: all 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+    .submit-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .submit-btn:hover::after { opacity: 1; }
+    .submit-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(124,58,237,0.4); }
+    .submit-btn:active { transform: translateY(0); }
+    .submit-btn:disabled {
+      opacity: 0.5; cursor: not-allowed;
+      transform: none; box-shadow: none;
+    }
+    .btn-inner { display: flex; align-items: center; justify-content: center; gap: 10px; }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── SIDEBAR ── */
+    .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+    /* Payload preview */
+    .payload-preview {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 12px;
+      line-height: 1.8;
+      color: #6b8ab0;
+      font-family: var(--font-mono);
+      min-height: 120px;
+      word-break: break-all;
+    }
+    .payload-preview .key   { color: #7dd3fc; }
+    .payload-preview .val   { color: var(--green); }
+    .payload-preview .punct { color: var(--muted); }
+
+    /* Activity log */
+    .log-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .log-list::-webkit-scrollbar { width: 4px; }
+    .log-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .log-item {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      font-size: 11px;
+      padding: 8px 10px;
+      background: var(--surface2);
+      border-radius: 7px;
+      border-left: 3px solid;
+      animation: fadeUp 0.3s ease;
+    }
+    .log-item.ok   { border-color: var(--green); }
+    .log-item.fail { border-color: var(--red); }
+    .log-time  { color: var(--muted); flex-shrink: 0; }
+    .log-text  { color: var(--text); flex: 1; line-height: 1.4; }
+    .log-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 20px 0; }
+
+    /* Status pill */
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 11px;
+    }
+    .status-label { color: var(--muted); font-family: var(--font-head); text-transform: uppercase; letter-spacing: 0.07em; }
+    .status-pill {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px;
+      font-family: var(--font-head);
+      font-weight: 600;
+    }
+    .status-pill .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+    }
+    .status-pill.online .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-pill.offline .dot { background: var(--red); }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── FOOTER ── */
+    .footer {
+      margin-top: 48px;
+      color: var(--muted);
+      font-size: 11px;
+      text-align: center;
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── NOTIFICATION CONTAINER ── -->
+<div id="notif-container"></div>
+
+<!-- ── HEADER ── -->
+<div class="header">
+  <div class="header-badge">
+    <span class="badge-dot"></span>
+    Demo / Simulation Mode
+  </div>
+  <h1>SmartCampus IoT Simulator</h1>
+  <p class="header-sub">Send device telemetry to ThingsBoard via MQTT/HTTP</p>
+</div>
+
+<!-- ── MAIN LAYOUT ── -->
+<div class="layout">
+
+  <!-- LEFT: FORM -->
+  <div class="card">
+    <div class="card-title">Device Configuration</div>
+
+    <!-- Device type selector -->
+    <div class="device-grid">
+      <button class="device-btn active" data-device="Water meter" onclick="selectDevice(this)">
+        <span class="device-icon">💧</span>
+        <span class="device-label">Water Meter</span>
+      </button>
+      <button class="device-btn" data-device="Energy meter" onclick="selectDevice(this)">
+        <span class="device-icon">⚡</span>
+        <span class="device-label">Energy Meter</span>
+      </button>
+      <button class="device-btn" data-device="Occupancy sensor" onclick="selectDevice(this)">
+        <span class="device-icon">👥</span>
+        <span class="device-label">Occupancy Sensor</span>
+      </button>
+    </div>
+
+    <!-- Facility fields -->
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="facilityName">Facility Name</label>
+        <input type="text" id="facilityName" placeholder="e.g. Block A" oninput="updatePreview()"/>
+      </div>
+      <div class="form-group">
+        <label for="facilityType">Facility Type</label>
+        <input type="text" id="facilityType" placeholder="e.g. Hostel, Lab" oninput="updatePreview()"/>
+      </div>
+    </div>
+
+    <!-- Sensor value -->
+    <div class="sensor-block">
+      <div class="sensor-icon-wrap" id="sensorIconWrap">💧</div>
+      <div class="sensor-inner">
+        <label id="sensorLabel">Water Usage (Liters)</label>
+        <input type="number" id="sensorValue" min="0" step="any" placeholder="Enter value" oninput="updatePreview()"/>
+      </div>
+    </div>
+
+    <!-- Submit -->
+    <button class="submit-btn" id="submitBtn" onclick="submitTelemetry()">
+      <div class="btn-inner">
+        <span class="spinner" id="spinner"></span>
+        <span id="btnText">Send Telemetry →</span>
+      </div>
+    </button>
+  </div>
+
+  <!-- RIGHT: SIDEBAR -->
+  <div class="sidebar">
+
+    <!-- Server status -->
+    <div class="card">
+      <div class="card-title">Connection</div>
+      <div class="status-row">
+        <span class="status-label">Proxy Server</span>
+        <span class="status-pill" id="proxyStatus">
+          <span class="dot"></span>
+          <span id="proxyStatusText">Checking...</span>
+        </span>
+      </div>
+      <div style="margin-top:10px">
+        <div class="status-row">
+          <span class="status-label">ThingsBoard</span>
+          <span class="status-pill online">
+            <span class="dot"></span>
+            <span>Cloud</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live payload preview -->
+    <div class="card">
+      <div class="card-title">Live Payload Preview</div>
+      <div class="payload-preview" id="payloadPreview">
+        <span class="punct">{</span><br/>
+        &nbsp;&nbsp;<span class="key">"water_usage"</span><span class="punct">:</span> <span class="val">—</span><span class="punct">,</span><br/>
+        &nbsp;&nbsp;<span class="key">"facility_name"</span><span class="punct">:</span> <span class="val">"—"</span><span class="punct">,</span><br/>
+        &nbsp;&nbsp;<span class="key">"facility_type"</span><span class="punct">:</span> <span class="val">"—"</span><br/>
+        <span class="punct">}</span>
+      </div>
+    </div>
+
+    <!-- Activity log -->
+    <div class="card">
+      <div class="card-title">Activity Log</div>
+      <div class="log-list" id="logList">
+        <div class="log-empty">No activity yet.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="footer">SmartCampus IoT Simulator &nbsp;·&nbsp; Demo Only &nbsp;·&nbsp; Data sent via local proxy → ThingsBoard Cloud</div>
+
+<script>
+  // ── STATE ──────────────────────────────────────────────
+  const DEVICE_CONFIG = {
+    "Water meter": {
+      key: "water_usage",
+      label: "Water Usage (Liters)",
+      icon: "💧",
+      iconClass: "water",
+      unit: "L"
+    },
+    "Energy meter": {
+      key: "energy_usage",
+      label: "Energy Usage (kWh)",
+      icon: "⚡",
+      iconClass: "energy",
+      unit: "kWh"
+    },
+    "Occupancy sensor": {
+      key: "occupancy",
+      label: "People Count",
+      icon: "👥",
+      iconClass: "people",
+      unit: "ppl"
+    }
+  };
+
+  let selectedDevice = "Water meter";
+  let activityLog    = [];
+
+  // ── PROXY HEALTH CHECK ─────────────────────────────────
+  async function checkProxy() {
+    const el   = document.getElementById('proxyStatus');
+    const text = document.getElementById('proxyStatusText');
+    try {
+      await axios.get('http://localhost:3000/health', { timeout: 3000 });
+      el.className   = 'status-pill online';
+      text.innerText = 'Online';
+    } catch {
+      el.className   = 'status-pill offline';
+      text.innerText = 'Offline';
+      showNotif('error', 'Proxy Offline', 'Start server: node server.js');
+    }
+  }
+
+  // ── DEVICE SELECTION ───────────────────────────────────
+  function selectDevice(btn) {
+    document.querySelectorAll('.device-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedDevice = btn.dataset.device;
+
+    const cfg = DEVICE_CONFIG[selectedDevice];
+    document.getElementById('sensorLabel').innerText   = cfg.label;
+    document.getElementById('sensorIconWrap').innerText = cfg.icon;
+    document.getElementById('sensorIconWrap').className = 'sensor-icon-wrap ' + cfg.iconClass;
+    document.getElementById('sensorValue').value        = '';
+    document.getElementById('sensorValue').placeholder  = `Enter ${cfg.unit} value`;
+    updatePreview();
+  }
+
+  // ── PAYLOAD PREVIEW ────────────────────────────────────
+  function updatePreview() {
+    const cfg  = DEVICE_CONFIG[selectedDevice];
+    const val  = document.getElementById('sensorValue').value || '—';
+    const name = document.getElementById('facilityName').value || '—';
+    const type = document.getElementById('facilityType').value || '—';
+
+    document.getElementById('payloadPreview').innerHTML = `
+      <span class="punct">{</span><br/>
+      &nbsp;&nbsp;<span class="key">"${cfg.key}"</span><span class="punct">:</span> <span class="val">${val}</span><span class="punct">,</span><br/>
+      &nbsp;&nbsp;<span class="key">"facility_name"</span><span class="punct">:</span> <span class="val">"${name}"</span><span class="punct">,</span><br/>
+      &nbsp;&nbsp;<span class="key">"facility_type"</span><span class="punct">:</span> <span class="val">"${type}"</span><br/>
+      <span class="punct">}</span>
+    `;
+  }
+
+  // ── SUBMIT ─────────────────────────────────────────────
+  async function submitTelemetry() {
+    const facilityName = document.getElementById('facilityName').value.trim();
+    const facilityType = document.getElementById('facilityType').value.trim();
+    const sensorRaw    = document.getElementById('sensorValue').value;
+
+    // Validation
+    let valid = true;
+    ['facilityName','facilityType','sensorValue'].forEach(id => {
+      document.getElementById(id).classList.remove('error-field');
+    });
+    if (!facilityName) { document.getElementById('facilityName').classList.add('error-field'); valid = false; }
+    if (!facilityType) { document.getElementById('facilityType').classList.add('error-field'); valid = false; }
+    if (sensorRaw === '' || isNaN(Number(sensorRaw))) {
+      document.getElementById('sensorValue').classList.add('error-field'); valid = false;
+    }
+    if (!valid) {
+      showNotif('error', 'Validation Error', 'Please fill in all fields correctly.');
+      return;
+    }
+
+    const cfg     = DEVICE_CONFIG[selectedDevice];
+    const payload = {
+      [cfg.key]:      Number(sensorRaw),
+      facility_name:  facilityName,
+      facility_type:  facilityType
+    };
+
+    setLoading(true);
+    showNotif('info', 'Sending...', `Transmitting telemetry for ${selectedDevice}`);
+
+    try {
+      const res = await axios.post('http://localhost:3000/telemetry', {
+        deviceType: selectedDevice,
+        payload
+      }, { timeout: 10000 });
+
+      if (res.data.success) {
+        showNotif('success', 'Telemetry Sent!',
+          `${selectedDevice} → ${cfg.val}: ${Number(sensorRaw)} ${cfg.unit} | ${facilityName} (${facilityType})`);
+        addLog('ok', `${selectedDevice} · ${facilityName} · ${Number(sensorRaw)} ${cfg.unit}`);
+        document.getElementById('sensorValue').value = '';
+        updatePreview();
+      } else {
+        throw new Error(res.data.error || 'Unknown error');
+      }
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message || 'Network error';
+      showNotif('error', 'Send Failed', msg);
+      addLog('fail', `${selectedDevice} · ${facilityName} · FAILED`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ── LOADING STATE ──────────────────────────────────────
+  function setLoading(on) {
+    document.getElementById('submitBtn').disabled      = on;
+    document.getElementById('spinner').style.display   = on ? 'block' : 'none';
+    document.getElementById('btnText').innerText       = on ? 'Sending...' : 'Send Telemetry →';
+  }
+
+  // ── ACTIVITY LOG ───────────────────────────────────────
+  function addLog(type, text) {
+    const now = new Date();
+    const time = now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    activityLog.unshift({ type, text, time });
+    if (activityLog.length > 20) activityLog.pop();
+
+    const list = document.getElementById('logList');
+    list.innerHTML = activityLog.map(l => `
+      <div class="log-item ${l.type}">
+        <span class="log-time">${l.time}</span>
+        <span class="log-text">${l.text}</span>
+      </div>
+    `).join('');
+  }
+
+  // ── NOTIFICATIONS ──────────────────────────────────────
+  let notifId = 0;
+  function showNotif(type, title, msg, duration = 4000) {
+    const id       = ++notifId;
+    const icons    = { success: '✅', error: '❌', info: '📡' };
+    const container = document.getElementById('notif-container');
+
+    const el = document.createElement('div');
+    el.className = `notif ${type}`;
+    el.id = `notif-${id}`;
+    el.innerHTML = `
+      <span class="notif-icon">${icons[type]}</span>
+      <div class="notif-body">
+        <div class="notif-title">${title}</div>
+        <div class="notif-msg">${msg}</div>
+      </div>
+      <button class="notif-close" onclick="dismissNotif(${id})">✕</button>
+    `;
+    container.prepend(el);
+
+    if (duration > 0) {
+      setTimeout(() => dismissNotif(id), duration);
+    }
+  }
+
+  function dismissNotif(id) {
+    const el = document.getElementById(`notif-${id}`);
+    if (!el) return;
+    el.classList.add('fadeOut');
+    setTimeout(() => el.remove(), 300);
+  }
+
+  // ── INIT ───────────────────────────────────────────────
+  updatePreview();
+  checkProxy();
+  setInterval(checkProxy, 15000); // recheck every 15s
+</script>
+</body>
+</html>
